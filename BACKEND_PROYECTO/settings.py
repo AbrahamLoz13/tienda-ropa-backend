@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-nopkz)9u_=-_yt@hi=b8#)m9*0$(z(90xye_=q=yr_e5q7u(ot
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -144,4 +144,5 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'BACKEND_PROYECTO.quickstart.pagination.PaginacionConfigurable',
 }
