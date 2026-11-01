@@ -24,7 +24,7 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 
 
 class PrendaViewSet(viewsets.ModelViewSet):
-    queryset = Prenda.objects.all()
+    queryset = Prenda.objects.select_related("categoria").prefetch_related("imagenes")
     serializer_class = PrendaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     filterset_fields = ["categoria", "talla", "color", "marca"]
