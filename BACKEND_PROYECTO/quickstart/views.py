@@ -1,13 +1,19 @@
-from rest_framework import viewsets, generics
+from rest_framework import generics, viewsets
 from rest_framework.authtoken.models import Token
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
-from rest_framework.views import APIView
-from .models import Categoria, Prenda, Favorito
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import Categoria, Favorito, Prenda
 from .permissions import IsAdminOrReadOnly
-from .serializers import CategoriaSerializer, PrendaSerializer,  RegisterSerializer
+from .serializers import (
+    CategoriaSerializer,
+    ImagenPrendaSerializer,
+    PrendaSerializer,
+    RegisterSerializer,
+)
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
@@ -15,15 +21,16 @@ class CategoriaViewSet(viewsets.ModelViewSet):
     serializer_class = CategoriaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     search_fields = ["nombre"]
-    
+
+
 class PrendaViewSet(viewsets.ModelViewSet):
     queryset = Prenda.objects.all()
     serializer_class = PrendaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     filterset_fields = ["categoria", "talla", "color", "marca"]
     ordering_fields = ["precio", "creado", "nombre"]
-    search_fields = ["nombre","descripcion","marca","color"]
-    
+    search_fields = ["nombre", "descripcion", "marca", "color"]
+
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def favorito(self, request, pk=None):
         prenda = self.get_object()
@@ -37,7 +44,21 @@ class PrendaViewSet(viewsets.ModelViewSet):
         prendas = self.get_queryset().filter(favoritos__user=request.user)
         serializer = self.get_serializer(prendas, many=True)
         return Response(serializer.data)
-    
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="imagenes",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def agregar_imagen(self, request, pk=None):
+        prenda = self.get_object()
+        serializer = ImagenPrendaSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(prenda=prenda)
+        return Response(serializer.data, status=201)
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -49,7 +70,8 @@ class RegisterView(generics.CreateAPIView):
         user = serializer.save()
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key, "username": user.username}, status=201)
-    
+
+
 class MeView(APIView):
     def get(self, request):
         user = request.user
