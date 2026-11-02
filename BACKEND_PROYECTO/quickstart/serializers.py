@@ -8,7 +8,7 @@ from .models import Categoria, ImagenPrenda, Prenda
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Categoria
-        fields = ["id", "nombre", "descripcion"]
+        fields = ["id", "nombre", "descripcion", "imagen"]
 
 
 class ImagenPrendaSerializer(serializers.ModelSerializer):
@@ -20,14 +20,18 @@ class ImagenPrendaSerializer(serializers.ModelSerializer):
 class PrendaSerializer(serializers.ModelSerializer):
     imagenes = ImagenPrendaSerializer(many=True, read_only=True)
     categoria_nombre = serializers.CharField(source="categoria.nombre", read_only=True)
+    es_favorito = serializers.SerializerMethodField()
 
     class Meta:
         model = Prenda
         fields = [
             "id", "nombre", "descripcion", "precio", "talla", "color",
             "marca", "stock", "imagen", "categoria", "categoria_nombre",
-            "imagenes", "creado",
+            "imagenes", "es_favorito", "creado",
         ]
+
+    def get_es_favorito(self, obj):
+        return obj.id in self.context.get("favoritos_ids", set())
 
     def validate_nombre(self, value):
         value = value.strip()

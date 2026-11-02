@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .filters import PrendaFilter
 from .models import Categoria, Favorito, Prenda
 from .permissions import IsAdminOrReadOnly
 from .serializers import (
@@ -27,9 +28,18 @@ class PrendaViewSet(viewsets.ModelViewSet):
     queryset = Prenda.objects.select_related("categoria").prefetch_related("imagenes")
     serializer_class = PrendaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
-    filterset_fields = ["categoria", "talla", "color", "marca"]
+    filterset_class = PrendaFilter
     ordering_fields = ["precio", "creado", "nombre"]
     search_fields = ["nombre", "descripcion", "marca", "color"]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        user = self.request.user
+        if user.is_authenticated:
+            context["favoritos_ids"] = set(
+                Favorito.objects.filter(user=user).values_list("prenda_id", flat=True)
+            )
+        return context
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def favorito(self, request, pk=None):
@@ -75,7 +85,14 @@ class RegisterView(generics.CreateAPIView):
 class MeView(APIView):
     def get(self, request):
         user = request.user
-        return Response({"id": user.id, "username": user.username, "email": user.email})
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_staff": user.is_staff,
+            }
+        )
 
 
 class LogoutView(APIView):
