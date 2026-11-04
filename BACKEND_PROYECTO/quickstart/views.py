@@ -5,9 +5,10 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from django.db.models import ProtectedError
 from .filters import PrendaFilter
 from .models import Categoria, Favorito, Prenda
+from django.shortcuts import get_object_or_404
 from .permissions import IsAdminOrReadOnly
 from .serializers import (
     CategoriaSerializer,
@@ -31,6 +32,15 @@ class PrendaViewSet(viewsets.ModelViewSet):
     filterset_class = PrendaFilter
     ordering_fields = ["precio", "creado", "nombre"]
     search_fields = ["nombre", "descripcion", "marca", "color"]
+    
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {"detail": "No puedes eliminar una categoría que todavía tiene prendas."},
+                status=409,
+            )
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -67,7 +77,16 @@ class PrendaViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(prenda=prenda)
         return Response(serializer.data, status=201)
-
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"imagenes/(?P<imagen_id>\d+)",
+    )
+    def eliminar_imagen(self, request, pk=None, imagen_id=None):
+        prenda = self.get_object()
+        imagen = get_object_or_404(prenda.imagenes, pk=imagen_id)
+        imagen.delete()
+        return Response(status=204)
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
