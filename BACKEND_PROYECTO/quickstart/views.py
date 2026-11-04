@@ -5,8 +5,10 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from django.db.models import ProtectedError
+from .filters import PrendaFilter
 from .models import Categoria, Favorito, Prenda
+from django.shortcuts import get_object_or_404
 from .permissions import IsAdminOrReadOnly
 from .serializers import (
     CategoriaSerializer,
@@ -27,9 +29,27 @@ class PrendaViewSet(viewsets.ModelViewSet):
     queryset = Prenda.objects.select_related("categoria").prefetch_related("imagenes")
     serializer_class = PrendaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
-    filterset_fields = ["categoria", "talla", "color", "marca"]
+    filterset_class = PrendaFilter
     ordering_fields = ["precio", "creado", "nombre"]
     search_fields = ["nombre", "descripcion", "marca", "color"]
+    
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {"detail": "No puedes eliminar una categoría que todavía tiene prendas."},
+                status=409,
+            )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        user = self.request.user
+        if user.is_authenticated:
+            context["favoritos_ids"] = set(
+                Favorito.objects.filter(user=user).values_list("prenda_id", flat=True)
+            )
+        return context
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def favorito(self, request, pk=None):
@@ -57,7 +77,16 @@ class PrendaViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(prenda=prenda)
         return Response(serializer.data, status=201)
-
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"imagenes/(?P<imagen_id>\d+)",
+    )
+    def eliminar_imagen(self, request, pk=None, imagen_id=None):
+        prenda = self.get_object()
+        imagen = get_object_or_404(prenda.imagenes, pk=imagen_id)
+        imagen.delete()
+        return Response(status=204)
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -75,7 +104,14 @@ class RegisterView(generics.CreateAPIView):
 class MeView(APIView):
     def get(self, request):
         user = request.user
-        return Response({"id": user.id, "username": user.username, "email": user.email})
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_staff": user.is_staff,
+            }
+        )
 
 
 class LogoutView(APIView):
