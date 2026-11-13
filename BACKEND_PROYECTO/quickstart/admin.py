@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Categoria, Favorito, ImagenPrenda, Prenda
+from .models import (
+    CarritoItem,
+    Categoria,
+    Favorito,
+    ImagenPrenda,
+    Pedido,
+    PedidoItem,
+    Prenda,
+)
 
 
 class ImagenPrendaInline(admin.TabularInline):
@@ -32,3 +40,30 @@ class ImagenPrendaAdmin(admin.ModelAdmin):
 class FavoritoAdmin(admin.ModelAdmin):
     list_display = ["user", "prenda", "creado"]
     list_filter = ["user"]
+
+
+@admin.register(CarritoItem)
+class CarritoItemAdmin(admin.ModelAdmin):
+    list_display = ["user", "prenda", "cantidad", "creado"]
+    list_filter = ["user"]
+
+
+class PedidoItemInline(admin.TabularInline):
+    model = PedidoItem
+    extra = 0
+    can_delete = False
+    readonly_fields = [
+        "prenda",
+        "nombre",
+        "talla",
+        "color",
+        "precio_unitario",
+        "cantidad",
+    ]
+
+
+@admin.register(Pedido)
+class PedidoAdmin(admin.ModelAdmin):
+    list_display = ["id", "user", "total", "estado", "creado"]
+    list_filter = ["estado", "user"]
+    inlines = [PedidoItemInline]

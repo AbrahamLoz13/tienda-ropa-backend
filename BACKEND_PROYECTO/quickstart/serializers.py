@@ -2,7 +2,14 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from .models import Categoria, ImagenPrenda, Prenda
+from .models import (
+    CarritoItem,
+    Categoria,
+    ImagenPrenda,
+    Pedido,
+    PedidoItem,
+    Prenda,
+)
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -58,6 +65,58 @@ class PrendaSerializer(serializers.ModelSerializer):
                 "Ya existe una prenda con ese nombre, talla y color."
             )
         return data
+
+
+class CarritoItemSerializer(serializers.ModelSerializer):
+    cantidad = serializers.IntegerField(min_value=1, default=1)
+    prenda_nombre = serializers.CharField(source="prenda.nombre", read_only=True)
+    precio = serializers.DecimalField(
+        source="prenda.precio", max_digits=8, decimal_places=2, read_only=True
+    )
+    talla = serializers.CharField(source="prenda.talla", read_only=True)
+    color = serializers.CharField(source="prenda.color", read_only=True)
+    stock = serializers.IntegerField(source="prenda.stock", read_only=True)
+    imagen = serializers.SerializerMethodField()
+    subtotal = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CarritoItem
+        fields = [
+            "id", "prenda", "prenda_nombre", "precio", "talla", "color",
+            "stock", "imagen", "cantidad", "subtotal",
+        ]
+
+    def get_imagen(self, obj):
+        img = obj.prenda.imagen
+        if not img:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(img.url) if request else img.url
+
+    def get_subtotal(self, obj):
+        return str(obj.prenda.precio * obj.cantidad)
+
+
+class PedidoItemSerializer(serializers.ModelSerializer):
+    subtotal = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PedidoItem
+        fields = [
+            "id", "prenda", "nombre", "talla", "color",
+            "precio_unitario", "cantidad", "subtotal",
+        ]
+
+    def get_subtotal(self, obj):
+        return str(obj.precio_unitario * obj.cantidad)
+
+
+class PedidoSerializer(serializers.ModelSerializer):
+    items = PedidoItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Pedido
+        fields = ["id", "total", "estado", "creado", "items"]
 
 
 class RegisterSerializer(serializers.ModelSerializer):
