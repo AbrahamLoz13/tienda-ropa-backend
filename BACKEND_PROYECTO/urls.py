@@ -26,7 +26,8 @@ from BACKEND_PROYECTO.quickstart import views
 router = routers.DefaultRouter()
 router.register(r"categorias", views.CategoriaViewSet)
 router.register(r"prendas", views.PrendaViewSet)
-
+router.register(r"carrito", views.CarritoViewSet, basename="carrito")
+router.register(r"pedidos", views.PedidoViewSet, basename="pedido")
 
 
 urlpatterns = [
@@ -36,8 +37,9 @@ urlpatterns = [
     path('register/', views.RegisterView.as_view()),
     path('me/', views.MeView.as_view()),
     path('logout/', views.LogoutView.as_view()),
+    path('api/marcas/', views.MarcasView.as_view()),
+    path('api/colores/', views.ColoresView.as_view()),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    
