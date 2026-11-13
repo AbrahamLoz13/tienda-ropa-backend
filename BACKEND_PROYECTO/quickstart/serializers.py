@@ -27,12 +27,13 @@ class ImagenPrendaSerializer(serializers.ModelSerializer):
 class PrendaSerializer(serializers.ModelSerializer):
     imagenes = ImagenPrendaSerializer(many=True, read_only=True)
     categoria_nombre = serializers.CharField(source="categoria.nombre", read_only=True)
+    color_nombre = serializers.CharField(source="get_color_display", read_only=True)
     es_favorito = serializers.SerializerMethodField()
 
     class Meta:
         model = Prenda
         fields = [
-            "id", "nombre", "descripcion", "precio", "talla", "color",
+            "id", "nombre", "descripcion", "precio", "talla", "color", "color_nombre",
             "marca", "stock", "imagen", "categoria", "categoria_nombre",
             "imagenes", "es_favorito", "creado",
         ]
@@ -74,7 +75,7 @@ class CarritoItemSerializer(serializers.ModelSerializer):
         source="prenda.precio", max_digits=8, decimal_places=2, read_only=True
     )
     talla = serializers.CharField(source="prenda.talla", read_only=True)
-    color = serializers.CharField(source="prenda.color", read_only=True)
+    color = serializers.CharField(source="prenda.get_color_display", read_only=True)
     stock = serializers.IntegerField(source="prenda.stock", read_only=True)
     imagen = serializers.SerializerMethodField()
     subtotal = serializers.SerializerMethodField()

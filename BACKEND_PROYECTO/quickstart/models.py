@@ -3,6 +3,25 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
+# (valor guardado, nombre que se muestra, código de color para dibujarlo en la app)
+COLORES = [
+    ("negro", "Negro", "#1a1a1a"),
+    ("blanco", "Blanco", "#ffffff"),
+    ("gris", "Gris", "#9e9e9e"),
+    ("azul", "Azul", "#1e6fd9"),
+    ("rojo", "Rojo", "#d32f2f"),
+    ("verde", "Verde", "#2e7d32"),
+    ("amarillo", "Amarillo", "#fbc02d"),
+    ("naranja", "Naranja", "#ef6c00"),
+    ("rosa", "Rosa", "#ec7fa9"),
+    ("morado", "Morado", "#7b1fa2"),
+    ("cafe", "Café", "#6d4c41"),
+    ("beige", "Beige", "#d7c4a3"),
+    ("multicolor", "Multicolor", "#888888"),
+    ("otro", "Otro", "#bdbdbd"),
+]
+
+
 # Create your models here.
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
@@ -38,6 +57,8 @@ class Prenda(models.Model):
         ("Lacoste", "Lacoste"),
         ("Otra", "Otra"),
     ]
+    COLOR_CHOICES = [(valor, nombre) for valor, nombre, _ in COLORES]
+
     nombre = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True, null=True)
     precio = models.DecimalField(
@@ -45,7 +66,7 @@ class Prenda(models.Model):
         decimal_places=2, 
         validators=[MinValueValidator(Decimal('0.01'))])
     talla = models.CharField(max_length=3, choices=TALLAS, default="M")
-    color = models.CharField(max_length=50)
+    color = models.CharField(max_length=50, choices=COLOR_CHOICES)
     marca = models.CharField(max_length=100, choices=MARCAS, blank=True, null=True)
     stock = models.PositiveIntegerField(default=0)
     imagen = models.ImageField(upload_to='prendas/', blank=True, null=True)

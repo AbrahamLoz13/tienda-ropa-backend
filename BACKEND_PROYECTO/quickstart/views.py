@@ -13,7 +13,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .filters import PrendaFilter
-from .models import CarritoItem, Categoria, Favorito, Pedido, PedidoItem, Prenda
+from .models import (
+    COLORES,
+    CarritoItem,
+    Categoria,
+    Favorito,
+    Pedido,
+    PedidoItem,
+    Prenda,
+)
 from .permissions import IsAdminOrReadOnly
 from .serializers import (
     CarritoItemSerializer,
@@ -216,7 +224,7 @@ class CarritoViewSet(viewsets.ModelViewSet):
                     prenda=prenda,
                     nombre=prenda.nombre,
                     talla=prenda.talla,
-                    color=prenda.color,
+                    color=prenda.get_color_display(),
                     precio_unitario=prenda.precio,
                     cantidad=it.cantidad,
                 )
@@ -269,7 +277,15 @@ class LogoutView(APIView):
     def post(self, request):
         Token.objects.filter(user=request.user).delete()
         return Response(status=204)
-    
+
+
 class MarcasView(APIView):
     def get(self, request):
         return Response([valor for valor, _ in Prenda.MARCAS])
+
+
+class ColoresView(APIView):
+    def get(self, request):
+        return Response(
+            [{"valor": v, "nombre": n, "hex": h} for v, n, h in COLORES]
+        )

@@ -38,6 +38,7 @@ urlpatterns = [
     path('me/', views.MeView.as_view()),
     path('logout/', views.LogoutView.as_view()),
     path('api/marcas/', views.MarcasView.as_view()),
+    path('api/colores/', views.ColoresView.as_view()),
 ]
 
 if settings.DEBUG:
