@@ -3,18 +3,24 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.filters import OrderingFilter
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .filters import PrendaFilter
+from .filters import BusquedaLiteral, PrendaFilter
 from .models import (
     COLORES,
+    PUBLICOS,
+    TIPOS_TALLA,
+    nombre_talla,
+    tallas_validas,
     CarritoItem,
     Categoria,
     Favorito,
@@ -53,6 +59,8 @@ class PrendaViewSet(viewsets.ModelViewSet):
     queryset = Prenda.objects.select_related("categoria").prefetch_related("imagenes")
     serializer_class = PrendaSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
+    # Igual que los filtros por defecto, pero con BusquedaLiteral en lugar de SearchFilter.
+    filter_backends = [DjangoFilterBackend, BusquedaLiteral, OrderingFilter]
     filterset_class = PrendaFilter
     ordering_fields = ["precio", "creado", "nombre"]
     search_fields = ["nombre", "descripcion", "marca", "color"]
@@ -115,7 +123,7 @@ class CarritoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             CarritoItem.objects.filter(user=self.request.user)
-            .select_related("prenda")
+            .select_related("prenda", "prenda__categoria")
             .order_by("id")
         )
 
@@ -135,13 +143,13 @@ class CarritoViewSet(viewsets.ModelViewSet):
         cantidad = serializer.validated_data.get("cantidad", 1)
 
         if prenda.stock == 0:
-            raise ValidationError({"cantidad": "Esta prenda está agotada."})
+            raise ValidationError({"cantidad": ["Esta prenda está agotada."]})
 
         existente = CarritoItem.objects.filter(user=request.user, prenda=prenda).first()
         nueva = (existente.cantidad if existente else 0) + cantidad
         if nueva > prenda.stock:
             raise ValidationError(
-                {"cantidad": f"Solo hay {prenda.stock} disponibles."}
+                {"cantidad": [f"Solo hay {prenda.stock} disponibles."]}
             )
 
         if existente:
@@ -163,7 +171,7 @@ class CarritoViewSet(viewsets.ModelViewSet):
         cantidad = serializer.validated_data["cantidad"]
         if cantidad > item.prenda.stock:
             raise ValidationError(
-                {"cantidad": f"Solo hay {item.prenda.stock} disponibles."}
+                {"cantidad": [f"Solo hay {item.prenda.stock} disponibles."]}
             )
         item.cantidad = cantidad
         item.save()
@@ -223,7 +231,7 @@ class CarritoViewSet(viewsets.ModelViewSet):
                     pedido=pedido,
                     prenda=prenda,
                     nombre=prenda.nombre,
-                    talla=prenda.talla,
+                    talla=prenda.talla_nombre,  # "26 MX", "8 años", "M"...
                     color=prenda.get_color_display(),
                     precio_unitario=prenda.precio,
                     cantidad=it.cantidad,
@@ -244,7 +252,10 @@ class PedidoViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = []
 
     def get_queryset(self):
-        return Pedido.objects.filter(user=self.request.user).prefetch_related("items")
+        # items__prenda evita una consulta extra por cada foto del historial.
+        return Pedido.objects.filter(user=self.request.user).prefetch_related(
+            "items", "items__prenda"
+        )
 
 
 class RegisterView(generics.CreateAPIView):
@@ -288,4 +299,26 @@ class ColoresView(APIView):
     def get(self, request):
         return Response(
             [{"valor": v, "nombre": n, "hex": h} for v, n, h in COLORES]
+        )
+
+
+class TallasView(APIView):
+    """Tallas válidas por tipo de categoría y público, con el nombre que se muestra."""
+
+    def get(self, request):
+        return Response(
+            [
+                {
+                    "tipo": tipo,
+                    "nombre": nombre,
+                    "publicos": {
+                        publico: [
+                            {"valor": t, "nombre": nombre_talla(t, tipo, publico)}
+                            for t in tallas_validas(tipo, publico)
+                        ]
+                        for publico, _ in PUBLICOS
+                    },
+                }
+                for tipo, nombre in TIPOS_TALLA
+            ]
         )

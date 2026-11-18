@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -22,11 +23,59 @@ COLORES = [
 ]
 
 
+# --- Tallas ---
+# Cada categoría dice qué tipo de talla usa y cada prenda dice si es para
+# adulto o infantil. Con esas dos cosas se sabe qué tallas son válidas.
+TIPOS_TALLA = [
+    ("ropa", "Ropa"),
+    ("calzado", "Calzado"),
+    ("unitalla", "Unitalla"),
+]
+PUBLICOS = [
+    ("adulto", "Adulto"),
+    ("infantil", "Infantil"),
+]
+UNITALLA = "U"
+TALLAS_POR_TIPO = {
+    "ropa": {
+        "adulto": ["XS", "S", "M", "L", "XL", "XXL"],
+        "infantil": ["2", "4", "6", "8", "10", "12", "14", "16"],  # años
+    },
+    "calzado": {
+        "adulto": [str(n) for n in range(22, 32)],    # 22 a 31 MX
+        "infantil": [str(n) for n in range(12, 22)],  # 12 a 21 MX
+    },
+    "unitalla": {
+        "adulto": [UNITALLA],
+        "infantil": [UNITALLA],
+    },
+}
+
+
+def tallas_validas(tipo, publico):
+    """Lista de tallas permitidas para un tipo de categoría y un público."""
+    return TALLAS_POR_TIPO.get(tipo, {}).get(publico, [])
+
+
+def nombre_talla(talla, tipo, publico):
+    """Cómo se muestra la talla: "M", "26 MX", "8 años" o "Unitalla"."""
+    if talla not in tallas_validas(tipo, publico):
+        return talla  # talla antigua que todavía no se corrige: se muestra tal cual
+    if tipo == "unitalla":
+        return "Unitalla"
+    if tipo == "calzado":
+        return f"{talla} MX"
+    if publico == "infantil":
+        return f"{talla} años"
+    return talla
+
+
 # Create your models here.
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
     descripcion = models.TextField(blank=True, null=True)
     imagen = models.ImageField(upload_to="categorias/", blank=True, null=True)
+    tipo_talla = models.CharField(max_length=10, choices=TIPOS_TALLA, default="ropa")
     class Meta:
         verbose_name_plural = "Categorías"
         ordering = ['nombre']
@@ -65,7 +114,10 @@ class Prenda(models.Model):
         max_digits=8,
         decimal_places=2, 
         validators=[MinValueValidator(Decimal('0.01'))])
-    talla = models.CharField(max_length=3, choices=TALLAS, default="M")
+    # La lista de tallas válidas depende de la categoría y del público
+    # (ver TALLAS_POR_TIPO); la revisa el serializer.
+    talla = models.CharField(max_length=3, default="M")
+    publico = models.CharField(max_length=10, choices=PUBLICOS, default="adulto")
     color = models.CharField(max_length=50, choices=COLOR_CHOICES)
     marca = models.CharField(max_length=100, choices=MARCAS, blank=True, null=True)
     stock = models.PositiveIntegerField(default=0)
@@ -76,8 +128,25 @@ class Prenda(models.Model):
     class Meta:
         ordering = ["-creado"]
     def __str__(self):
-        return f"{self.nombre} ({self.talla})"
-    
+        return f"{self.nombre} ({self.talla_nombre})"
+
+    @property
+    def talla_nombre(self):
+        return nombre_talla(self.talla, self.categoria.tipo_talla, self.publico)
+
+    def clean(self):
+        # Misma regla que la API, para el panel de administración de Django.
+        if not self.categoria_id:
+            return
+        tipo = self.categoria.tipo_talla
+        if tipo == "unitalla":
+            self.talla = UNITALLA
+        elif self.talla not in tallas_validas(tipo, self.publico):
+            raise ValidationError(
+                {"talla": "Válidas: " + ", ".join(tallas_validas(tipo, self.publico))}
+            )
+
+
 class ImagenPrenda(models.Model):
     prenda = models.ForeignKey(Prenda, on_delete=models.CASCADE, related_name='imagenes')
     imagen = models.ImageField(upload_to='prendas/galeria/')
@@ -153,7 +222,9 @@ class PedidoItem(models.Model):
     )
     # copia de los datos al momento de comprar
     nombre = models.CharField(max_length=150)
-    talla = models.CharField(max_length=3)
+    # Se guarda ya con su nombre ("26 MX", "8 años") para que el historial
+    # diga exactamente qué se compró.
+    talla = models.CharField(max_length=20)
     color = models.CharField(max_length=50)
     precio_unitario = models.DecimalField(max_digits=8, decimal_places=2)
     cantidad = models.PositiveIntegerField()

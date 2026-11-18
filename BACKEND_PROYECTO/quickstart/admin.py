@@ -18,14 +18,15 @@ class ImagenPrendaInline(admin.TabularInline):
 
 @admin.register(Categoria)
 class CategoriaAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "descripcion"]
+    list_display = ["nombre", "tipo_talla", "descripcion"]
+    list_filter = ["tipo_talla"]
     search_fields = ["nombre"]
 
 
 @admin.register(Prenda)
 class PrendaAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "categoria", "talla", "color", "precio", "stock", "creado"]
-    list_filter = ["categoria", "talla", "color"]
+    list_display = ["nombre", "categoria", "publico", "talla", "color", "precio", "stock", "creado"]
+    list_filter = ["categoria", "publico", "talla", "color"]
     search_fields = ["nombre", "marca", "color"]
     list_editable = ["precio", "stock"]
     inlines = [ImagenPrendaInline]
