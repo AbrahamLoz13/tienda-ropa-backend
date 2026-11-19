@@ -1,9 +1,9 @@
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
-    PUBLICOS,
     TIPOS_TALLA,
     UNITALLA,
     CarritoItem,
@@ -45,14 +45,9 @@ class PrendaSerializer(serializers.ModelSerializer):
     imagenes = ImagenPrendaSerializer(many=True, read_only=True)
     categoria_nombre = serializers.CharField(source="categoria.nombre", read_only=True)
     color_nombre = serializers.CharField(source="get_color_display", read_only=True)
-    # Tipo de talla de la categoría y cómo se muestra la talla ("26 MX", "8 años").
+    # Tipo de talla de la categoría y cómo se muestra la talla ("M", "26 MX").
     categoria_tipo_talla = serializers.CharField(source="categoria.tipo_talla", read_only=True)
     talla_nombre = serializers.CharField(read_only=True)
-    publico = serializers.ChoiceField(
-        choices=PUBLICOS,
-        required=False,
-        error_messages={"invalid_choice": "Elige Adulto o Infantil."},
-    )
     talla = serializers.CharField(
         max_length=3,
         required=False,
@@ -75,7 +70,7 @@ class PrendaSerializer(serializers.ModelSerializer):
         model = Prenda
         fields = [
             "id", "nombre", "descripcion", "precio", "talla", "talla_nombre",
-            "publico", "color", "color_nombre", "marca", "stock", "imagen",
+            "color", "color_nombre", "marca", "stock", "imagen",
             "categoria", "categoria_nombre", "categoria_tipo_talla",
             "imagenes", "es_favorito", "creado",
         ]
@@ -97,15 +92,14 @@ class PrendaSerializer(serializers.ModelSerializer):
     def validate(self, data):
         nombre = data.get("nombre", getattr(self.instance, "nombre", None))
         categoria = data.get("categoria", getattr(self.instance, "categoria", None))
-        publico = data.get("publico", getattr(self.instance, "publico", "adulto"))
         talla = data.get("talla", getattr(self.instance, "talla", "M"))
         color = data.get("color", getattr(self.instance, "color", None))
 
-        # La talla se revisa cuando se crea la prenda o cuando cambia la talla,
-        # la categoría o el público. Si solo cambia, por ejemplo, el stock,
-        # una prenda vieja con talla fuera de lista se puede seguir guardando.
+        # La talla se revisa cuando se crea la prenda o cuando cambia la talla o
+        # la categoría. Si solo cambia, por ejemplo, el stock, una prenda vieja
+        # con talla fuera de lista se puede seguir guardando.
         cambia_talla = self.instance is None or any(
-            campo in data for campo in ("talla", "categoria", "publico")
+            campo in data for campo in ("talla", "categoria")
         )
         if categoria is not None and cambia_talla:
             tipo = categoria.tipo_talla
@@ -113,25 +107,24 @@ class PrendaSerializer(serializers.ModelSerializer):
                 talla = UNITALLA
                 data["talla"] = UNITALLA
             else:
-                validas = tallas_validas(tipo, publico)
+                validas = tallas_validas(tipo)
                 talla = str(talla).strip().upper()
                 if talla not in validas:
                     tipo_txt = dict(TIPOS_TALLA)[tipo].lower()
-                    publico_txt = dict(PUBLICOS)[publico].lower()
-                    unidad = " (MX)" if tipo == "calzado" else " (años)" if publico == "infantil" else ""
+                    unidad = " (MX)" if tipo == "calzado" else ""
                     raise serializers.ValidationError(
-                        {"talla": f"Elige una talla de {tipo_txt} {publico_txt}{unidad}: {_rango(validas)}."}
+                        {"talla": f"Elige una talla de {tipo_txt}{unidad}: {_rango(validas)}."}
                     )
                 data["talla"] = talla
 
         repetida = Prenda.objects.filter(
-            nombre__iexact=nombre, talla=talla, color__iexact=color, publico=publico
+            nombre__iexact=nombre, talla=talla, color__iexact=color
         )
         if self.instance:
             repetida = repetida.exclude(pk=self.instance.pk)
         if repetida.exists():
             raise serializers.ValidationError(
-                "Ya existe una prenda con ese nombre, talla, color y público."
+                "Ya existe una prenda con ese nombre, talla y color."
             )
         return data
 
@@ -144,7 +137,6 @@ class CarritoItemSerializer(serializers.ModelSerializer):
     )
     talla = serializers.CharField(source="prenda.talla", read_only=True)
     talla_nombre = serializers.CharField(source="prenda.talla_nombre", read_only=True)
-    publico = serializers.CharField(source="prenda.publico", read_only=True)
     color = serializers.CharField(source="prenda.get_color_display", read_only=True)
     stock = serializers.IntegerField(source="prenda.stock", read_only=True)
     imagen = serializers.SerializerMethodField()
@@ -154,7 +146,7 @@ class CarritoItemSerializer(serializers.ModelSerializer):
         model = CarritoItem
         fields = [
             "id", "prenda", "prenda_nombre", "precio", "talla", "talla_nombre",
-            "publico", "color", "stock", "imagen", "cantidad", "subtotal",
+            "color", "stock", "imagen", "cantidad", "subtotal",
         ]
 
     def get_imagen(self, obj):
@@ -205,8 +197,19 @@ class PedidoSerializer(serializers.ModelSerializer):
         return sum(item.cantidad for item in obj.items.all())
 
 
+# Mensajes claros para las reglas de contraseña de Django (por código de error).
+MENSAJES_PASSWORD = {
+    "password_too_similar": "La contraseña se parece demasiado a tu usuario o correo.",
+    "password_too_short": "La contraseña debe tener al menos 8 caracteres.",
+    "password_too_common": "Esa contraseña es muy común. Elige otra.",
+    "password_entirely_numeric": "La contraseña no puede ser solo números.",
+}
+
+
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, validators=[validate_password])
+    # Las reglas de contraseña de Django se revisan en validate(), junto con el
+    # usuario y el correo, para poder rechazar contraseñas parecidas a ellos.
+    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
@@ -228,6 +231,18 @@ class RegisterSerializer(serializers.ModelSerializer):
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("Este correo ya está registrado.")
         return value
+
+    def validate(self, data):
+        # Usuario "temporal" (no se guarda) para comparar la contraseña con el
+        # nombre de usuario y el correo (UserAttributeSimilarityValidator).
+        temporal = User(username=data.get("username", ""), email=data.get("email", ""))
+        try:
+            validate_password(data.get("password", ""), user=temporal)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(
+                {"password": [MENSAJES_PASSWORD.get(err.code, err.messages[0]) for err in e.error_list]}
+            )
+        return data
 
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
