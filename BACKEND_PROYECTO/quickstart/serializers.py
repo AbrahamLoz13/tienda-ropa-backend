@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
+    PUBLICOS,
     TIPOS_TALLA,
     UNITALLA,
     CarritoItem,
@@ -45,9 +46,14 @@ class PrendaSerializer(serializers.ModelSerializer):
     imagenes = ImagenPrendaSerializer(many=True, read_only=True)
     categoria_nombre = serializers.CharField(source="categoria.nombre", read_only=True)
     color_nombre = serializers.CharField(source="get_color_display", read_only=True)
-    # Tipo de talla de la categoría y cómo se muestra la talla ("M", "26 MX").
+    # Tipo de talla de la categoría y cómo se muestra la talla ("26 MX", "8 años").
     categoria_tipo_talla = serializers.CharField(source="categoria.tipo_talla", read_only=True)
     talla_nombre = serializers.CharField(read_only=True)
+    publico = serializers.ChoiceField(
+        choices=PUBLICOS,
+        required=False,
+        error_messages={"invalid_choice": "Elige Adulto o Infantil."},
+    )
     talla = serializers.CharField(
         max_length=3,
         required=False,
@@ -70,7 +76,7 @@ class PrendaSerializer(serializers.ModelSerializer):
         model = Prenda
         fields = [
             "id", "nombre", "descripcion", "precio", "talla", "talla_nombre",
-            "color", "color_nombre", "marca", "stock", "imagen",
+            "publico", "color", "color_nombre", "marca", "stock", "imagen",
             "categoria", "categoria_nombre", "categoria_tipo_talla",
             "imagenes", "es_favorito", "creado",
         ]
@@ -92,14 +98,15 @@ class PrendaSerializer(serializers.ModelSerializer):
     def validate(self, data):
         nombre = data.get("nombre", getattr(self.instance, "nombre", None))
         categoria = data.get("categoria", getattr(self.instance, "categoria", None))
+        publico = data.get("publico", getattr(self.instance, "publico", "adulto"))
         talla = data.get("talla", getattr(self.instance, "talla", "M"))
         color = data.get("color", getattr(self.instance, "color", None))
 
-        # La talla se revisa cuando se crea la prenda o cuando cambia la talla o
-        # la categoría. Si solo cambia, por ejemplo, el stock, una prenda vieja
-        # con talla fuera de lista se puede seguir guardando.
+        # La talla se revisa cuando se crea la prenda o cuando cambia la talla,
+        # la categoría o el público. Si solo cambia, por ejemplo, el stock,
+        # una prenda vieja con talla fuera de lista se puede seguir guardando.
         cambia_talla = self.instance is None or any(
-            campo in data for campo in ("talla", "categoria")
+            campo in data for campo in ("talla", "categoria", "publico")
         )
         if categoria is not None and cambia_talla:
             tipo = categoria.tipo_talla
@@ -107,24 +114,25 @@ class PrendaSerializer(serializers.ModelSerializer):
                 talla = UNITALLA
                 data["talla"] = UNITALLA
             else:
-                validas = tallas_validas(tipo)
+                validas = tallas_validas(tipo, publico)
                 talla = str(talla).strip().upper()
                 if talla not in validas:
                     tipo_txt = dict(TIPOS_TALLA)[tipo].lower()
-                    unidad = " (MX)" if tipo == "calzado" else ""
+                    publico_txt = dict(PUBLICOS)[publico].lower()
+                    unidad = " (MX)" if tipo == "calzado" else " (años)" if publico == "infantil" else ""
                     raise serializers.ValidationError(
-                        {"talla": f"Elige una talla de {tipo_txt}{unidad}: {_rango(validas)}."}
+                        {"talla": f"Elige una talla de {tipo_txt} {publico_txt}{unidad}: {_rango(validas)}."}
                     )
                 data["talla"] = talla
 
         repetida = Prenda.objects.filter(
-            nombre__iexact=nombre, talla=talla, color__iexact=color
+            nombre__iexact=nombre, talla=talla, color__iexact=color, publico=publico
         )
         if self.instance:
             repetida = repetida.exclude(pk=self.instance.pk)
         if repetida.exists():
             raise serializers.ValidationError(
-                "Ya existe una prenda con ese nombre, talla y color."
+                "Ya existe una prenda con ese nombre, talla, color y público."
             )
         return data
 
@@ -137,6 +145,7 @@ class CarritoItemSerializer(serializers.ModelSerializer):
     )
     talla = serializers.CharField(source="prenda.talla", read_only=True)
     talla_nombre = serializers.CharField(source="prenda.talla_nombre", read_only=True)
+    publico = serializers.CharField(source="prenda.publico", read_only=True)
     color = serializers.CharField(source="prenda.get_color_display", read_only=True)
     stock = serializers.IntegerField(source="prenda.stock", read_only=True)
     imagen = serializers.SerializerMethodField()
@@ -146,7 +155,7 @@ class CarritoItemSerializer(serializers.ModelSerializer):
         model = CarritoItem
         fields = [
             "id", "prenda", "prenda_nombre", "precio", "talla", "talla_nombre",
-            "color", "stock", "imagen", "cantidad", "subtotal",
+            "publico", "color", "stock", "imagen", "cantidad", "subtotal",
         ]
 
     def get_imagen(self, obj):
